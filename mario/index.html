@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Game Platformer Retro (Final - Perbaikan Bug)</title>
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+    <style>
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            height: 100vh;
+            margin: 0;
+            background-color: #639bff; /* Warna langit lebih cerah */
+            font-family: 'Press Start 2P', cursive;
+            color: white;
+            text-shadow: 3px 3px #000000;
+        }
+        canvas {
+            background-color: #639bff;
+            border: 4px solid #000;
+            border-radius: 8px;
+            box-shadow: 0 10px 20px rgba(0,0,0,0.2);
+            image-rendering: pixelated; /* Memastikan grafis pixel terlihat tajam */
+        }
+        #game-info {
+            display: flex;
+            justify-content: space-between;
+            width: 800px;
+            padding: 10px 0;
+            font-size: 20px;
+        }
+        #controls {
+            margin-top: 15px;
+            font-size: 14px;
+            text-align: center;
+        }
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            overflow: auto;
+            background-color: rgba(0,0,0,0.6);
+            justify-content: center;
+            align-items: center;
+        }
+        .modal-content {
+            background-color: #fefefe;
+            margin: auto;
+            padding: 30px;
+            border: 4px solid #000;
+            border-radius: 10px;
+            width: 80%;
+            max-width: 400px;
+            text-align: center;
+            color: #333;
+            text-shadow: none;
+        }
+        .modal-content h2 { font-size: 24px; margin-bottom: 20px; }
+        .modal-content button {
+            background-color: #4CAF50; color: white; padding: 14px 28px;
+            border: none; border-radius: 5px; cursor: pointer;
+            font-family: 'Press Start 2P', cursive; font-size: 16px; border: 2px solid #000;
+        }
+        .modal-content button:hover { background-color: #45a049; }
+    </style>
+</head>
+<body>
+
+    <div id="game-info">
+        <span id="score">SKOR: 0</span>
+        <span id="lives">NYAWA: 3</span>
+    </div>
+    
+    <canvas id="gameCanvas" width="800" height="400"></canvas>
+
+    <div id="controls">
+        Gunakan Panah Kiri/Kanan untuk Bergerak, Panah Atas untuk Melompat
+    </div>
+
+    <div id="messageModal" class="modal">
+        <div class="modal-content">
+            <h2 id="modalText">Kamu Menang!</h2>
+            <button id="restartButton">Main Lagi</button>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const scoreElement = document.getElementById('score');
+        const livesElement = document.getElementById('lives');
+        const modal = document.getElementById('messageModal');
+        const modalText = document.getElementById('modalText');
+        const restartButton = document.getElementById('restartButton');
+
+        // Pengaturan Game
+        let score = 0, lives = 3;
+        const gravity = 0.6;
+        let gameOver = false;
+        let gameFrame = 0;
+        
+        // Objek Player
+        const player = {
+            x: 50, y: 300, width: 32, height: 48, speed: 5,
+            velocityX: 0, velocityY: 0, isJumping: false, facing: 'right',
+            state: 'small', // 'small' atau 'super'
+            invincible: false, invincibleTimer: 0
+        };
+
+        const keys = { right: { pressed: false }, left: { pressed: false } };
+
+        let platforms = [], coins = [], enemies = [], flag = {}, pipes = [], decorations = [], powerUps = [];
+
+        function initGame() {
+            gameOver = false; score = 0; lives = 3; gameFrame = 0;
+            player.x = 50; player.y = 300; player.velocityX = 0; player.velocityY = 0;
+            player.state = 'small'; player.width = 32; player.height = 48;
+            player.invincible = false; player.invincibleTimer = 0;
+            keys.right.pressed = false; keys.left.pressed = false;
+            updateUI();
+
+            platforms = [
+                { x: -50, y: 380, width: 720, height: 20 },
+                { x: 750, y: 380, width: 500, height: 20 },
+                { x: 1300, y: 340, width: 100, height: 20 },
+                { x: 1400, y: 380, width: 1000, height: 20 },
+                { x: 2500, y: 380, width: 800, height: 20 },
+                { x: 250, y: 280, width: 128, height: 20 },
+                { x: 500, y: 220, width: 128, height: 20 },
+                { x: 950, y: 280, width: 128, height: 20 },
+                { x: 1700, y: 280, width: 150, height: 20, type: 'moving', distance: 200, speed: 1.2 },
+                { x: 2600, y: 220, width: 128, height: 20 },
+                { x: 2800, y: 160, width: 128, height: 20 },
+            ];
+
+            pipes = [
+                { x: 600, y: 310, width: 64, height: 70, trap: { active: false, timer: 180, speed: 1.5, direction: 1, y: 310, height: 50 } },
+                { x: 1900, y: 280, width: 64, height: 100, trap: { active: false, timer: 240, speed: 1.5, direction: 1, y: 280, height: 50 } },
+                { x: 2950, y: 310, width: 64, height: 70, trap: { active: false, timer: 120, speed: 2, direction: 1, y: 310, height: 50 } }
+            ];
+
+            enemies = [
+                { x: 400, y: 348, width: 32, height: 32, speed: 1, direction: 1 },
+                { x: 800, y: 348, width: 32, height: 32, speed: 1.2, direction: 1 },
+                { x: 1500, y: 348, width: 32, height: 32, speed: 1.5, direction: -1 },
+                { x: 2700, y: 348, width: 32, height: 32, speed: 1, direction: 1 }
+            ];
+            
+            coins = [
+                { x: 282, y: 240, width: 24, height: 24 }, { x: 532, y: 180, width: 24, height: 24 },
+                { x: 982, y: 240, width: 24, height: 24 }, { x: 1450, y: 340, width: 24, height: 24 },
+                { x: 1480, y: 340, width: 24, height: 24 }, { x: 1510, y: 340, width: 24, height: 24 },
+            ];
+
+            decorations = [
+                { type: 'cloud', x: 100, y: 80, width: 100, height: 40, speed: 0.2 }, { type: 'cloud', x: 400, y: 120, width: 120, height: 50, speed: 0.2 },
+                { type: 'cloud', x: 800, y: 90, width: 150, height: 60, speed: 0.2 }, { type: 'cloud', x: 1200, y: 110, width: 100, height: 40, speed: 0.2 },
+                { type: 'bush', x: 150, y: 350, width: 80, height: 30 }, { type: 'bush', x: 780, y: 350, width: 120, height: 30 },
+                { type: 'bush', x: 1600, y: 350, width: 100, height: 30 }, { type: 'hill', x: -20, y: 280, width: 250, height: 100},
+                { type: 'hill', x: 1100, y: 250, width: 350, height: 130},
+                { type: 'luckblock', x: 282, y: 200, width: 32, height: 32, hit: false }, 
+                { type: 'luckblock', x: 1200, y: 200, width: 32, height: 32, hit: false }, 
+                { type: 'luckblock', x: 2100, y: 280, width: 32, height: 32, hit: false }
+            ];
+
+            powerUps = [];
+            flag = { x: 3200, y: 280, width: 20, height: 100 };
+            platforms.forEach(p => { if (p.type === 'moving') { p.startX = p.x; p.direction = 1; } });
+
+            modal.style.display = 'none';
+            gameLoop();
+        }
+        
+        function drawPlayer() {
+            if (player.invincible && gameFrame % 10 < 5) return;
+            const pX = player.x, pY = player.y, pW = player.width, pH = player.height;
+            const isSuper = player.state === 'super';
+            const skin = '#f7b183', hair = '#4a2517', shirt = isSuper ? '#fefefe' : '#d73a00', pants = isSuper ? '#d73a00' : '#006dd7', shoes = '#6d3a1f';
+            ctx.fillStyle = pants; ctx.fillRect(pX, pY + pH * 0.6, pW, pH * 0.4);
+            ctx.fillStyle = shirt; ctx.fillRect(pX, pY + pH * 0.3, pW, pH * 0.4);
+            if(isSuper) { ctx.fillStyle = '#f7b400'; ctx.fillRect(pX + pW * 0.2, pY + pH * 0.5, pW * 0.15, pW * 0.15); ctx.fillRect(pX + pW * 0.65, pY + pH * 0.5, pW * 0.15, pW * 0.15); }
+            ctx.fillStyle = shoes; ctx.fillRect(pX, pY + pH * 0.9, pW, pH * 0.1);
+            ctx.fillStyle = skin; ctx.fillRect(pX + pW * 0.1, pY, pW * 0.8, pH * 0.35);
+            ctx.fillStyle = hair; ctx.fillRect(pX + pW * 0.1, pY, pW * 0.8, pH * 0.1);
+            if(isSuper) ctx.fillRect(pX + pW * 0.1, pY, pW * 0.1, pH * 0.2);
+            ctx.fillStyle = 'black'; const eyeX = player.facing === 'right' ? pX + pW * 0.6 : pX + pW * 0.2; ctx.fillRect(eyeX, pY + pH * 0.1, pW * 0.15, pW * 0.15);
+        }
+        function drawPlatforms() {
+            platforms.forEach(p => {
+                const brickW = 20, mainColor = '#d2691e', shadowColor = '#a0522d', highlightColor = '#f4a460';
+                for (let i = 0; i < p.width; i += brickW) { ctx.fillStyle = (i / brickW) % 2 === 0 ? mainColor : shadowColor; ctx.fillRect(p.x + i, p.y, brickW, p.height); }
+                ctx.fillStyle = highlightColor; ctx.fillRect(p.x, p.y, p.width, 4);
+                ctx.fillStyle = 'rgba(0,0,0,0.2)'; ctx.fillRect(p.x, p.y + p.height - 4, p.width, 4);
+            });
+        }
+        function drawDecorations() {
+            decorations.forEach(d => {
+                switch (d.type) {
+                    case 'cloud':
+                        ctx.fillStyle = 'rgba(255, 255, 255, 0.95)'; ctx.beginPath();
+                        ctx.arc(d.x, d.y, d.width * 0.4, 0, Math.PI * 2); ctx.arc(d.x + d.width * 0.3, d.y, d.width * 0.5, 0, Math.PI * 2);
+                        ctx.arc(d.x - d.width * 0.3, d.y + 10, d.width * 0.4, 0, Math.PI * 2); ctx.fill(); break;
+                    case 'bush':
+                        ctx.fillStyle = '#1a9134'; ctx.beginPath(); ctx.arc(d.x, d.y, d.width * 0.5, 0, Math.PI * 2); ctx.fill();
+                        ctx.fillStyle = '#146e28'; ctx.beginPath(); ctx.arc(d.x - 20, d.y + 5, d.width * 0.3, 0, Math.PI * 2); ctx.fill(); break;
+                    case 'hill':
+                        ctx.fillStyle = '#3cb371'; ctx.beginPath(); ctx.arc(d.x, d.y, d.width, d.height, Math.PI, 2*Math.PI); ctx.fill();
+                        ctx.fillStyle = '#2e8b57'; ctx.beginPath(); ctx.arc(d.x-10, d.y, d.width-10, d.height-10, Math.PI, 2*Math.PI); ctx.fill(); break;
+                    case 'luckblock':
+                        if(!d.hit) {
+                            ctx.fillStyle = '#f0a048'; ctx.fillRect(d.x, d.y, 32, 32); ctx.fillStyle = '#d08028'; ctx.fillRect(d.x + 4, d.y + 4, 24, 24);
+                            ctx.fillStyle = 'white'; ctx.font = '24px "Press Start 2P"'; ctx.textAlign = 'center';
+                            const blink = gameFrame % 60 < 30 ? '?' : ''; ctx.fillText(blink, d.x + 16, d.y + 26);
+                        } else {
+                            ctx.fillStyle = '#a0522d'; ctx.fillRect(d.x, d.y, 32, 32); ctx.fillStyle = '#6d3a1f'; ctx.fillRect(d.x + 4, d.y + 4, 24, 24);
+                        } break;
+                }
+            });
+        }
+         function drawPipes() {
+            const pipeBody = '#28a745', pipeHighlight = '#98fb98', pipeTop = '#006400';
+            pipes.forEach(p => {
+                ctx.fillStyle = pipeTop; ctx.fillRect(p.x - 5, p.y, p.width + 10, 20);
+                ctx.fillStyle = pipeBody; ctx.fillRect(p.x, p.y + 10, p.width, p.height-10);
+                ctx.fillStyle = pipeHighlight; ctx.fillRect(p.x + 5, p.y + 10, 10, p.height-10);
+                
+                if (p.trap.active) {
+                    const trap = p.trap;
+                    // Batang
+                    ctx.fillStyle = '#32cd32';
+                    ctx.fillRect(p.x + p.width/2 - 5, trap.y, 10, p.y - trap.y + 5);
+                    // Kepala
+                    ctx.fillStyle = '#dc143c';
+                    ctx.beginPath();
+                    ctx.arc(p.x + p.width/2, trap.y, 18, 0, Math.PI * 2);
+                    ctx.fill();
+                    // Gigi
+                    ctx.fillStyle = 'white';
+                    ctx.fillRect(p.x + p.width/2 - 10, trap.y - 5, 5, 5);
+                    ctx.fillRect(p.x + p.width/2 + 5, trap.y - 5, 5, 5);
+                }
+            });
+        }
+        function drawEnemies() {
+            enemies.forEach(e => {
+                const eX = e.x, eY = e.y, eW = e.width, eH = e.height;
+                const bodyColor = '#804000', headColor = '#d05800', eyeColor = 'white';
+                const footSize = eW * 0.2; const step = gameFrame % 40 < 20;
+                ctx.fillStyle = bodyColor; ctx.fillRect(eX + (step ? 0 : footSize), eY + eH - footSize, eW - footSize, footSize);
+                ctx.fillStyle = headColor; ctx.beginPath(); ctx.arc(eX + eW / 2, eY + eH * 0.5, eW/2, Math.PI, 2 * Math.PI); ctx.fill();
+                ctx.fillStyle = eyeColor;
+                ctx.beginPath(); ctx.moveTo(eX + eW*0.3, eY + eH*0.1); ctx.lineTo(eX + eW*0.1, eY + eH*0.4); ctx.lineTo(eX + eW*0.5, eY + eH*0.4); ctx.closePath(); ctx.fill();
+                ctx.moveTo(eX + eW*0.7, eY + eH*0.1); ctx.lineTo(eX + eW*0.9, eY + eH*0.4); ctx.lineTo(eX + eW*0.5, eY + eH*0.4); ctx.closePath(); ctx.fill();
+            });
+        }
+        function drawPowerUps() {
+            powerUps.forEach(p => {
+                if (p.type === 'bakso') {
+                    const bx = p.x, by = p.y, bw = p.width;
+                    ctx.fillStyle = '#a0522d';
+                    ctx.beginPath(); ctx.arc(bx + bw / 2, by + bw / 2, bw / 2, 0, Math.PI * 2); ctx.fill();
+                    ctx.fillStyle = '#d2691e';
+                    ctx.beginPath(); ctx.arc(bx + bw / 3, by + bw / 3, bw / 5, 0, Math.PI * 2); ctx.fill();
+                     ctx.fillStyle = 'white';
+                     ctx.beginPath(); ctx.arc(bx + bw * 0.3, by + bw * 0.4, bw * 0.1, 0, Math.PI * 2); ctx.fill();
+                     ctx.beginPath(); ctx.arc(bx + bw * 0.7, by + bw * 0.4, bw * 0.1, 0, Math.PI * 2); ctx.fill();
+                }
+            });
+        }
+        function drawCoins() {
+            coins.forEach(c => {
+                 const gold = '#ffd700', shine = '#ffff00';
+                 ctx.fillStyle = gold; ctx.beginPath(); ctx.arc(c.x + c.width / 2, c.y + c.height / 2, c.width / 2, 0, Math.PI * 2); ctx.fill();
+                 ctx.fillStyle = shine; ctx.beginPath(); ctx.arc(c.x + c.width / 2.5, c.y + c.height / 2.5, c.width / 5, 0, Math.PI * 2); ctx.fill();
+            });
+        }
+        function drawFlag() {
+            ctx.fillStyle = '#c0c0c0'; ctx.fillRect(flag.x, flag.y, 10, flag.height); ctx.fillStyle = '#f0f0f0'; ctx.fillRect(flag.x, flag.y, 5, flag.height);
+            ctx.fillStyle = '#228B22'; ctx.beginPath(); ctx.moveTo(flag.x + 10, flag.y); ctx.lineTo(flag.x + 60, flag.y + 20); ctx.lineTo(flag.x + 10, flag.y + 40); ctx.closePath(); ctx.fill();
+        }
+
+        // --- UPDATE ---
+        function update() {
+            if (gameOver) return; gameFrame++;
+
+            // PERBAIKAN: Menambahkan kembali logika timer invincibility
+            if (player.invincible) {
+                player.invincibleTimer--;
+                if (player.invincibleTimer <= 0) {
+                    player.invincible = false;
+                }
+            }
+
+            // 1. Gerakan Horizontal Player
+            if (keys.right.pressed && player.x < 400) player.velocityX = player.speed;
+            else if (keys.left.pressed && player.x > 100) player.velocityX = -player.speed;
+            else player.velocityX = 0;
+            
+            // Scrolling
+            if (player.velocityX === 0) {
+                 if (keys.right.pressed) {
+                    [platforms, coins, enemies, pipes, decorations, powerUps].forEach(arr => arr.forEach(item => item.x -= player.speed * (item.type === 'cloud' ? item.speed : 1) ));
+                    flag.x -= player.speed;
+                } else if (keys.left.pressed) {
+                    [platforms, coins, enemies, pipes, decorations, powerUps].forEach(arr => arr.forEach(item => item.x += player.speed * (item.type === 'cloud' ? item.speed : 1) ));
+                    flag.x += player.speed;
+                }
+            }
+
+            player.x += player.velocityX;
+
+            // 2. Cek Tabrakan Horizontal Player dengan Objek Solid (Pipa & Luckblock)
+            const solidObjects = [...pipes, ...decorations.filter(d => d.type === 'luckblock')];
+            solidObjects.forEach(obj => {
+                if (player.x < obj.x + obj.width && player.x + player.width > obj.x && player.y < obj.y + obj.height && player.y + player.height > obj.y) {
+                    if (player.velocityX > 0) player.x = obj.x - player.width;
+                    else if (player.velocityX < 0) player.x = obj.x + obj.width;
+                }
+            });
+
+            // 3. Gerakan Vertikal Player
+            player.velocityY += gravity;
+            player.y += player.velocityY;
+
+            // 4. Cek Tabrakan Vertikal Player (Platform & Objek Solid)
+            platforms.forEach(platform => {
+                if (player.velocityY > 0 && player.x + player.width > platform.x && player.x < platform.x + platform.width && player.y + player.height >= platform.y && player.y + player.height < platform.y + platform.height) {
+                    player.y = platform.y - player.height;
+                    player.velocityY = 0;
+                    player.isJumping = false;
+                    if (platform.type === 'moving') player.x += platform.speed * platform.direction;
+                }
+            });
+
+            solidObjects.forEach(obj => {
+                 if (player.x < obj.x + obj.width && player.x + player.width > obj.x && player.y < obj.y + obj.height && player.y + player.height > obj.y) {
+                    if (player.velocityY > 0) {
+                        player.y = obj.y - player.height;
+                        player.velocityY = 0;
+                        player.isJumping = false;
+                    } else if (player.velocityY < 0) {
+                        player.y = obj.y + obj.height;
+                        player.velocityY = 0;
+                        if (obj.type === 'luckblock' && !obj.hit) {
+                             obj.hit = true;
+                             const direction = player.facing === 'right' ? 1 : -1;
+                             powerUps.push({type: 'bakso', x: obj.x, y: obj.y - 32, width: 32, height: 32, velocityX: 1.5 * direction, velocityY: -2 });
+                        }
+                    }
+                }
+            });
+
+            // Gerakan platform bergerak
+            platforms.forEach(p => {
+                if (p.type === 'moving') {
+                    p.x += p.speed * p.direction;
+                    if (Math.abs(p.x - p.startX) >= p.distance) p.direction *= -1;
+                }
+            });
+            
+            // Fisika Bakso
+            for (let i = powerUps.length - 1; i >= 0; i--) {
+                const p = powerUps[i];
+                if (p.type === 'bakso') {
+                    p.velocityY += gravity; // PERBAIKAN: Selalu terapkan gravitasi
+                    p.x += p.velocityX;
+                    p.y += p.velocityY;
+                    
+                    const allGround = [...platforms, ...solidObjects];
+                    allGround.forEach(platform => {
+                         // Tabrakan vertikal bakso
+                        if (p.velocityY >= 0 && p.x + p.width > platform.x && p.x < platform.x + platform.width && p.y + p.height >= platform.y && p.y + p.height < platform.y + 20) {
+                            p.y = platform.y - p.height; 
+                            p.velocityY = 0; 
+                        }
+                        // Tabrakan horizontal bakso
+                        if (p.x < platform.x + platform.width && p.x + p.width > platform.x && p.y < platform.y + platform.height && p.y + p.height > platform.y) {
+                           if (p.velocityX > 0 && p.x + p.width > platform.x + 1) {
+                               p.velocityX *= -1;
+                           } else if(p.velocityX < 0 && p.x < platform.x + platform.width - 1) {
+                                p.velocityX *= -1;
+                           }
+                        }
+                    });
+
+                    if (player.x < p.x + p.width && player.x + player.width > p.x && player.y < p.y + p.height && player.y + player.height > p.y) {
+                        powerUps.splice(i, 1); score += 500;
+                        if (player.state === 'small') { player.state = 'super'; player.y -= 16; player.height = 64; }
+                        updateUI();
+                    }
+                }
+            }
+            
+            // Mengambil koin
+            for (let i = coins.length - 1; i >= 0; i--) {
+                const c = coins[i];
+                if (player.x < c.x + c.width && player.x + player.width > c.x && player.y < c.y + c.height && player.y + player.height > c.y) {
+                    coins.splice(i, 1); score += 10; updateUI();
+                }
+            }
+            
+            // AI Tanaman Pipa & Musuh
+            pipes.forEach(p => {
+                const trap = p.trap;
+                if (!trap.active) { trap.timer--; if (trap.timer <= 0) trap.active = true; }
+                else {
+                    trap.y -= trap.speed * trap.direction;
+                    if (trap.y < p.y - trap.height || trap.y > p.y) {
+                        trap.direction *= -1;
+                        if (trap.direction === 1) { trap.active = false; trap.timer = Math.random() * 120 + 180; }
+                    }
+                    const headX = p.x + p.width / 2; const headRadius = 18;
+                    if (player.x + player.width > headX - headRadius && player.x < headX + headRadius && player.y + player.height > trap.y - headRadius && player.y < trap.y + headRadius) {
+                        if(!player.invincible) handleDeath();
+                    }
+                }
+            });
+            
+            for (let i = enemies.length - 1; i >= 0; i--) {
+                const e = enemies[i];
+                e.x += e.speed * e.direction;
+
+                let groundAhead = false;
+                const checkX = e.direction > 0 ? e.x + e.width : e.x -1;
+                const checkY = e.y + e.height + 1;
+                const allGround = [...platforms, ...solidObjects];
+
+                for(const platform of allGround) {
+                    if ( checkX >= platform.x && checkX <= platform.x + platform.width && checkY >= platform.y && checkY <= platform.y + platform.height ) {
+                        groundAhead = true;
+                        break;
+                    }
+                }
+                if(!groundAhead) {
+                    e.direction *= -1;
+                }
+
+                if (player.x < e.x + e.width && player.x + player.width > e.x && player.y < e.y + e.height && player.y + player.height > e.y) {
+                    if (player.velocityY > 0 && player.y + player.height < e.y + 25) {
+                       enemies.splice(i, 1); score += 50; player.velocityY = -8;
+                    } else if (!player.invincible) handleDeath();
+                }
+            }
+
+            if (player.y > canvas.height + 50) handleDeath('fall');
+            if (player.x > flag.x) { showModal("KAMU MENANG!"); gameOver = true; }
+        }
+        
+        function handleDeath(type) {
+            if (gameOver || player.invincible) return;
+            if (type === 'fall') {
+                lives = 0; // Langsung habiskan nyawa
+                updateUI(); showModal("GAME OVER"); gameOver = true; return;
+            }
+            if(player.state === 'super') {
+                player.state = 'small'; player.height = 48; player.y += 16;
+                player.invincible = true;
+                player.invincibleTimer = 120;
+                player.velocityY = -5; // Efek pantulan kecil
+            } else {
+                lives--; updateUI();
+                if (lives <= 0) { showModal("GAME OVER"); gameOver = true; }
+                else { 
+                    player.invincible = true; 
+                    player.invincibleTimer = 120; 
+                    player.velocityY = -5; // Efek pantulan kecil
+                }
+            }
+        }
+        
+        function showModal(message) { modalText.innerText = message; modal.style.display = 'flex'; }
+        function updateUI() { scoreElement.textContent = `SKOR: ${score}`; livesElement.textContent = `NYAWA: ${lives}`; }
+
+        function gameLoop() {
+            if (gameOver) return;
+            requestAnimationFrame(gameLoop);
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            drawDecorations(); drawPlatforms(); drawPipes();
+            drawCoins(); drawPowerUps(); drawEnemies();
+            drawFlag(); drawPlayer();
+            update();
+        }
+        
+        window.addEventListener('keydown', (event) => {
+            switch (event.key) {
+                case 'ArrowRight': keys.right.pressed = true; player.facing = 'right'; break;
+                case 'ArrowLeft': keys.left.pressed = true; player.facing = 'left'; break;
+                case 'ArrowUp': if (!player.isJumping) { player.velocityY = -16; player.isJumping = true; } break;
+            }
+        });
+        window.addEventListener('keyup', (event) => {
+            switch (event.key) {
+                case 'ArrowRight': keys.right.pressed = false; break;
+                case 'ArrowLeft': keys.left.pressed = false; break;
+            }
+        });
+        restartButton.addEventListener('click', () => { initGame(); });
+
+        initGame();
+    </script>
+</body>
+</html>
